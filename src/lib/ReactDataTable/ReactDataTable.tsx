@@ -1,4 +1,4 @@
-﻿/* eslint max-lines: ["error", 350] */
+﻿/* eslint max-lines: ["error", 400] */
 import { faSortDown, faSortUp, faSearch, faTimes, faSort } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { Paging } from "@neolution-ch/react-pattern-ui";
@@ -15,11 +15,14 @@ import { DraggableRow, InternalTableRow } from "./TableRows";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { getCommonPinningStyles } from "../utils/getCommonPinningStyles";
 import { getFilterValue, setFilterValue } from "../utils/customFilterMethods";
+import { useVirtualizer, Virtualizer } from "@tanstack/react-virtual";
+import { useRef } from "react";
 
 interface TableBodyProps<TData> {
   enableDragAndDrop: boolean;
   table: Table<TData>;
   rowStyle?: (row: TData) => CSSProperties;
+  virtualizer: Virtualizer<any, Element>;
 }
 
 /**b
@@ -65,43 +68,71 @@ const ReactDataTable = <TData, TFilter extends FilterModel = Record<string, neve
     }
   }`;
 
+  const parentRef = useRef<HTMLDivElement>(null)
+
+  const virtualizer = useVirtualizer({
+    count: totalRecords,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 34,
+    overscan: 20,
+  })
+
   const TableBody = <TData,>(props: TableBodyProps<TData>) => {
-    const { enableDragAndDrop, table, rowStyle } = props;
+    const { enableDragAndDrop, table, rowStyle, virtualizer } = props;
 
     if (enableDragAndDrop && !table.options.getRowId) {
       throw new Error("You must provide 'getRowId()' to data-table options in order to use the drag-and-drop feature.");
     }
 
+    console.log(`virrtaulizer oooon ${rowStyle}`);
+    const {rows} = table.getRowModel();
+
     return enableDragAndDrop ? (
       <SortableContext items={table.getRowModel().rows.map((row) => row.id)} strategy={verticalListSortingStrategy}>
-        {table.getRowModel().rows.map((row, index) => (
-          <DraggableRow<TData, TFilter>
+          {virtualizer.getVirtualItems().map((virtualRow, index) => {
+              const row = rows[virtualRow.index]
+            return (
+              <DraggableRow<TData, TFilter>
             key={index}
             row={row}
             enableRowClick={enableRowClick as ReactDataTableProps<TData, TFilter>["enableRowClick"]}
             onRowClick={onRowClick as ReactDataTableProps<TData, TFilter>["onRowClick"]}
             enableRowSelection={enableRowSelection as boolean | ((row: Row<TData>) => boolean)}
             enableExpanding={enableExpanding as boolean | ((row: Row<TData>) => boolean)}
-            rowStyle={rowStyle && rowStyle(row.original)}
+            rowStyle={{
+                    height: `${virtualRow.size}px`,
+                    transform: `translateY(${
+                      virtualRow.start - index * virtualRow.size
+                    }px)`,
+                  }}
             fullRowSelectable={fullRowSelectable}
           />
-        ))}
+              )
+            })}
       </SortableContext>
     ) : (
-      <>
-        {table.getRowModel().rows.map((row, index) => (
-          <InternalTableRow<TData, TFilter>
-            key={index}
-            row={row}
-            enableRowClick={enableRowClick as ReactDataTableProps<TData, TFilter>["enableRowClick"]}
-            onRowClick={onRowClick as ReactDataTableProps<TData, TFilter>["onRowClick"]}
-            enableRowSelection={enableRowSelection as boolean | ((row: Row<TData>) => boolean)}
-            enableExpanding={enableExpanding as boolean | ((row: Row<TData>) => boolean)}
-            rowStyle={rowStyle && rowStyle(row.original)}
-            fullRowSelectable={fullRowSelectable}
-            hasPinnedColumns={table.getIsSomeColumnsPinned()}
-          />
-        ))}
+        <>
+          {virtualizer.getVirtualItems().map((virtualRow, index) => {
+            const row = rows[virtualRow.index];
+            return (
+              <InternalTableRow<TData, TFilter>
+                key={index}
+                row={row}
+                enableRowClick={enableRowClick as ReactDataTableProps<TData, TFilter>["enableRowClick"]}
+                onRowClick={onRowClick as ReactDataTableProps<TData, TFilter>["onRowClick"]}
+                enableRowSelection={enableRowSelection as boolean | ((row: Row<TData>) => boolean)}
+                enableExpanding={enableExpanding as boolean | ((row: Row<TData>) => boolean)}
+                rowStyle={{
+                    height: `${virtualRow.size}px`,
+                    transform: `translateY(${
+                      virtualRow.start - index * virtualRow.size
+                    }px)`,
+                  } }
+                fullRowSelectable={fullRowSelectable}
+                hasPinnedColumns={table.getIsSomeColumnsPinned()}
+              /> 
+              )
+            })}
       </>
     );
   };
@@ -117,6 +148,8 @@ const ReactDataTable = <TData, TFilter extends FilterModel = Record<string, neve
         sensors={sensors}
       >
         <style>{loadingCss}</style>
+        <div ref={parentRef}>
+          <div style={{ height: `${virtualizer.getTotalSize()}px` }}>
         <ReactStrapTable
           striped={isStriped}
           hover
@@ -294,7 +327,7 @@ const ReactDataTable = <TData, TFilter extends FilterModel = Record<string, neve
                 <td colSpan={table.getVisibleFlatColumns().length}>{noEntriesMessage ?? reactDataTableTranslations.noEntries}</td>
               </tr>
             ) : (
-              <TableBody<TData> table={table} enableDragAndDrop={!!dragAndDropOptions?.enableDragAndDrop} rowStyle={rowStyle} />
+                    <TableBody<TData> table={table} enableDragAndDrop={!!dragAndDropOptions?.enableDragAndDrop} rowStyle={rowStyle} virtualizer={virtualizer} />
             )}
           </tbody>
           {table.getFooterGroups().length > 0 &&
@@ -316,6 +349,8 @@ const ReactDataTable = <TData, TFilter extends FilterModel = Record<string, neve
               </tfoot>
             )}
         </ReactStrapTable>
+      </div>
+      </div>
       </DndContext>
 
       {showPaging && (
